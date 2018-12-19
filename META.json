@@ -1,5 +1,5 @@
 {
-   "abstract" : "It's new $module",
+   "abstract" : "Concurrent I/O framework",
    "author" : [
       "karupanerura <karupa@cpan.org>"
    ],
@@ -52,6 +52,17 @@
       }
    },
    "release_status" : "unstable",
+   "resources" : {
+      "bugtracker" : {
+         "web" : "https://github.com/karupanerura/IO-Concurrent/issues"
+      },
+      "homepage" : "https://github.com/karupanerura/IO-Concurrent",
+      "repository" : {
+         "type" : "git",
+         "url" : "git://github.com/karupanerura/IO-Concurrent.git",
+         "web" : "https://github.com/karupanerura/IO-Concurrent"
+      }
+   },
    "version" : "0.01",
    "x_serialization_backend" : "JSON::PP version 4.00",
    "x_static_install" : 1
