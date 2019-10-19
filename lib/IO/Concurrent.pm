@@ -5,7 +5,21 @@ use warnings;
 
 our $VERSION = "0.01";
 
+use IO::Concurrent::Runner;
 
+sub new {
+    my ($class, %args) = @_;
+    return bless \%args => $class;
+}
+
+sub run {
+    my ($self, $scenario) = @_;
+    my @contexts = map { $scenario->create_context($_) } @{ $self->{handlers} };
+    my $runner = IO::Concurrent::Runner->new(\@contexts, {
+        on_error => $scenario->on_error,
+    });
+    $runner->run();
+}
 
 1;
 __END__
@@ -19,28 +33,100 @@ IO::Concurrent - Concurrent I/O framework
 =head1 SYNOPSIS
 
     use IO::Concurrent;
-    use IO::Concurrent::Target;
     use IO::Concurrent::Scenario;
 
-    my @targets = map {
+    my @handlers = map {
        $_->blocking(0); # should be non-blocking mode
-       IO::Concurrent::Target->new(
-           id      => fileno($_),
-           handler => $_,
-       )
+       $_;
     } ($fh1, $fh2, ...);
 
+   my %items_map;
+   IO::Concurrent->new(
+       handlers => \@handlers,
+   )->run(
+       IO::Concurrent::Scenario->new->wait_for_writable(sub {
+          my $context = shift;
+
+          $context->handler->syswrite("stats items\r\n");
+          $context->next;
+       })->wait_for_readable(sub {
+          my $context = shift;
+
+          my $items_for_target = ($items_map{$context->handler->fileno} ||= {});
+          while (my $line = $context->handler->getline()) {
+              $line =~ s/\r\n$//; # chomp
+
+              if ($line eq 'END') {
+                  $context->next();
+                  return;
+              } elsif ($line =~ /^STAT items:(\d*):number (\d*)/) {
+                  $items_for_target->{$1} = $2;
+                  next;
+              }
+
+              # ignore others
+          }
+          $context->abort('Assertion failuer: terminator payload "END" has not come, but it EOF received');
+      })->wait_for_writable(sub {
+          my $context = shift;
+
+          my $items_for_target = $items_map{$context->handler->fileno};
+          my ($target_bucket) = keys %$items_for_target; # fetch one bucket id
+          unless ($target_bucket) {
+              $context->complete();
+              return;
+          }
+
+          my $bucket_items = delete $items_for_target->{$target_bucket};
+
+          $context->handler->syswrite("stats cachedump $target_bucket $bucket_items\r\n");
+          $context->next();
+      })->wait_for_readable(sub {
+          my $context = shift;
+
+          my $items_for_target = $items_map{$context->handler->fileno};
+          while (my $line = $context->handler->getline()) {
+              $line =~ s/\r\n$//; # chomp
+
+              if ($line eq 'END') {
+                  my $has_more = keys %$items_for_target;
+                  if (defined $has_more) {
+                      $context->back();
+                  } else {
+                      $context->next();
+                  }
+                  return;
+              } elsif ($line =~ /^ITEM (\S+) \[.* (\d+) s\]/) {
+                  my ($key, $expires) = ($1, $2);
+                  print "key:$key\texpires:$expires\n";
+                  next;
+              }
+
+              $context->abort("Invalid payload: $line");
+          }
+          $context->abort('Assertion failuer: terminator payload "END" has not come, but it EOF received');
+      })->wait_for_writable(sub {
+          my $context = shift;
+
+          $context->handler->blocking(1);
+          $context->handler->write("quit\r\n");
+          $context->handler->close();
+      })
+   );
+
     my %items_map;
-    IO::Concurrent->new(targets => \@targets)->run(
-       IO::Concurrent::Scenario->new->on_next(writable => sub {
+    IO::Concurrent->new(
+        handlers => \@handlers,
+    )->run(
+       IO::Concurrent::Scenario->new->wait_for_writable(sub {
            my $context = shift;
-           $context->target->handler->write("stats items\r\n");
+           $context->handler->write("stats items\r\n");
            $context->next();
-       })->on_next(readable => sub {
+       })->wait_for_readable(sub {
            my $context = shift;
 
-           my $items_for_target = ($items_map{$context->target->id} ||= {});
-           while (my $line = $context->target->handler->getline()) {
+           my $items_for_target = ($items_map{$context->handler->fileno} ||= {});
+           while (my $line = $context->handler->getline()) {
                $line =~ s/\r\n$//; # chomp
 
                if ($line eq 'END') {
@@ -53,20 +139,20 @@ IO::Concurrent - Concurrent I/O framework
                $context->abort("Invalid payload: $line");
            }
            $context->abort('Assertion failuer: terminator payload "END" has not come, but it EOF received');
-       })->on_next(writable => sub {
+       })->wait_for_writable(sub {
            my $context = shift;
 
-           my $items_for_target = $items_map{$context->target->id};
+           my $items_for_target = $items_map{$context->handler->fileno};
            my ($target_bucket) = keys %$items_for_target; # fetch one bucket id
            my $bucket_items = delete $items_for_target->{$target_bucket};
 
-           $context->target->handler->write("stats cachedump $target_bucket $bucket_items\r\n");
+           $context->handler->write("stats cachedump $target_bucket $bucket_items\r\n");
            $context->next();
-       })->on_next(readable => sub {
+       })->wait_for_readable(sub {
            my $context = shift;
 
-           my $items_for_target = $items_map{$context->target->id};
-           while (my $line = $context->target->handler->getline()) {
+           my $items_for_target = $items_map{$context->handler->fileno};
+           while (my $line = $context->handler->getline()) {
                $line =~ s/\r\n$//; # chomp
 
                if ($line eq 'END') {
@@ -85,16 +171,13 @@ IO::Concurrent - Concurrent I/O framework
                $context->abort("Invalid payload: $line");
            }
            $context->abort('Assertion failuer: terminator payload "END" has not come, but it EOF received');
-       })->on_next(writable => sub {
+       })->wait_for_writable(sub {
            my $context = shift;
 
-           $context->target->handler->blocking(1);
-           $context->target->handler->write("quit\r\n");
-       })->on_next('*' => sub {
-           my $context = shift;
-
-           $context->target->handler->close();
-       });
+           $context->handler->blocking(1);
+           $context->handler->write("quit\r\n");
+           $context->handler->close();
+       })
     );
 
 =head1 DESCRIPTION
