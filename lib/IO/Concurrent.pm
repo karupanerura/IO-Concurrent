@@ -9,16 +9,22 @@ use IO::Concurrent::Runner;
 
 sub new {
     my ($class, %args) = @_;
+    $args{engine} ||= 'Select';
     return bless \%args => $class;
 }
 
 sub run {
     my ($self, $scenario) = @_;
     my @contexts = map { $scenario->create_context($_) } @{ $self->{handlers} };
-    my $runner = IO::Concurrent::Runner->new(\@contexts, {
+    my $runner = $self->_create_runner(\@contexts, {
         on_error => $scenario->on_error,
     });
     $runner->run();
+}
+
+sub _create_runner {
+    my $self = shift;
+    return IO::Concurrent::Runner->engine($self->{engine})->new(@_);
 }
 
 1;

@@ -5,7 +5,7 @@ use warnings;
 use Carp ();
 
 use IO::Concurrent::Context;
-use IO::Concurrent::Actor::Select;
+use IO::Concurrent::Actor;
 
 sub new {
     my ($class) = @_;
@@ -18,14 +18,14 @@ sub new {
 
 sub wait_for_writable {
     my ($self, $callback) = @_;
-    my $actor = IO::Concurrent::Actor::Select->new(writable => $callback);
+    my $actor = IO::Concurrent::Actor->new(writable => $callback);
     push @{ $self->{actors} } => $actor;
     return $self;
 }
 
 sub wait_for_readable {
     my ($self, $callback) = @_;
-    my $actor = IO::Concurrent::Actor::Select->new(readable => $callback);
+    my $actor = IO::Concurrent::Actor->new(readable => $callback);
     push @{ $self->{actors} } => $actor;
     return $self;
 }

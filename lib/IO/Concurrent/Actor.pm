@@ -4,8 +4,27 @@ use warnings;
 
 use Carp ();
 
-sub type     { Carp::croak('abstract method') }
-sub callback { Carp::croak('abstract method') }
+use constant {
+    WRITABLE => 'writable',
+    READABLE => 'readable',
+};
+
+sub new {
+    my ($class, $event_type, $callback) = @_;
+    if ($event_type ne WRITABLE && $event_type ne READABLE) {
+        Carp::croak("invalid event type: $event_type");
+    }
+
+    return bless {
+        event_type => $event_type,
+        callback   => $callback,
+    } => $class;
+}
+
+sub is_waiting_for_writable { shift->{event_type} eq WRITABLE }
+sub is_waiting_for_readable { shift->{event_type} eq READABLE }
+
+sub callback { shift->{callback} }
 
 1;
 __END__
