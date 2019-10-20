@@ -20,7 +20,7 @@ IO::Concurrent - Concurrent I/O framework
            my $context = shift;
 
            $context->handler->syswrite("stats items\r\n");
-           $context->next;
+           $context->next();
         })->wait_for_readable(sub {
            my $context = shift;
 
@@ -154,7 +154,10 @@ IO::Concurrent - Concurrent I/O framework
 
 # DESCRIPTION
 
-IO::Concurrent is ...
+IO::Concurrent is a concurrent I/O framework.
+
+When implements concurrent non-blocking I/O using `select(2)` or others (without [AnyEvent](https://metacpan.org/pod/AnyEvent)/[IO::AIO](https://metacpan.org/pod/IO::AIO)), it makes many complex procedural codes.
+This framework makes easy to write it by scenarios.
 
 # LICENSE
 
